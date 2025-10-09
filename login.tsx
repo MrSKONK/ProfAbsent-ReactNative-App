@@ -14,6 +14,7 @@ import {
 import { useRouter } from "expo-router";
 import { supabase } from '../utils/supabase';
 import { DEV_MODE, devLogin } from '../utils/devAuth';
+import { useAuth } from '../utils/useAuth';
 
 interface FormData {
   email: string;
@@ -27,6 +28,7 @@ interface Errors {
 
 export default function Login() {
     const router = useRouter();
+    const { setDevAuthentication } = useAuth();
     const [formData, setFormData] = useState<FormData>({
       email: '',
       password: '',
@@ -76,14 +78,18 @@ export default function Login() {
             
             if (result.success) {
               console.log('Connexion dev réussie:', result.user);
+              // Marquer l'authentification en mode dev
+              await setDevAuthentication(true);
               router.replace('/');
             } else {
               Alert.alert('Erreur de connexion', result.error);
             }
           } else {
-            // Mode production - utiliser Supabase
+            // Mode production - utiliser Supabase avec gestion d'erreur améliorée
+            console.log('Tentative de connexion Supabase...');
+            
             const { data, error } = await supabase.auth.signInWithPassword({
-              email: formData.email,
+              email: formData.email.trim().toLowerCase(),
               password: formData.password,
             });
 
@@ -91,45 +97,81 @@ export default function Login() {
 
             if (error) {
               console.error('Erreur Supabase:', error);
-              Alert.alert('Erreur de connexion', error.message);
-            } else {
+              
+              // Gestion spécifique des erreurs
+              let errorMessage = 'Une erreur de connexion s\'est produite';
+              
+              if (error.message.includes('Invalid login credentials')) {
+                errorMessage = 'Email ou mot de passe incorrect. Vérifiez vos identifiants.';
+              } else if (error.message.includes('Email not confirmed')) {
+                errorMessage = 'Veuillez confirmer votre email avant de vous connecter.';
+              } else if (error.message.includes('Too many requests')) {
+                errorMessage = 'Trop de tentatives. Attendez quelques minutes avant de réessayer.';
+              } else {
+                errorMessage = error.message;
+              }
+              
+              Alert.alert('Erreur de connexion', errorMessage);
+            } else if (data.user) {
               console.log('Connexion réussie:', data);
+              
               try {
-                // Vérifier si le profil existe, sinon le créer
-                const userId = data.user?.id;
-                if (userId) {
-                  const { data: existing, error: selErr } = await supabase
+                // Vérifier/créer le profil utilisateur
+                const userId = data.user.id;
+                const userEmail = data.user.email;
+                
+                if (userId && userEmail) {
+                  const { data: existingProfile, error: profileError } = await supabase
                     .from('profiles')
-                    .select('id_profile')
+                    .select('id_profile, nom_complet, role')
                     .eq('id_profile', userId)
                     .maybeSingle();
-                  if (selErr) {
-                    console.warn('Vérification profil échouée:', selErr.message);
+                  
+                  if (profileError && !profileError.message.includes('No rows')) {
+                    console.warn('Erreur vérification profil:', profileError.message);
                   }
-                  if (!existing) {
-                    const meta = (data.user?.user_metadata as any) || {};
-                    const fullName = meta.full_name || formData.email.split('@')[0];
-                    const role = meta.role || 'Professeur';
-                    const departement = meta.departement || null;
-                    const telephone = meta.telephone || null;
-                    const { error: insErr } = await supabase
+                  
+                  if (!existingProfile) {
+                    // Créer le profil s'il n'existe pas
+                    const metadata = data.user.user_metadata || {};
+                    const fullName = metadata.full_name || userEmail.split('@')[0];
+                    const role = metadata.role || 'Professeur';
+                    const departement = metadata.departement || null;
+                    const telephone = metadata.telephone || null;
+                    
+                    const { error: insertError } = await supabase
                       .from('profiles')
-                      .insert({ id_profile: userId, nom_complet: fullName, role, departement, telephone });
-                    if (insErr) {
-                      console.warn('Création profil échouée:', insErr.message);
+                      .insert({
+                        id_profile: userId,
+                        nom_complet: fullName,
+                        role: role,
+                        departement: departement,
+                        telephone: telephone
+                      });
+                    
+                    if (insertError) {
+                      console.warn('Erreur création profil:', insertError.message);
+                    } else {
+                      console.log('Profil créé avec succès');
                     }
+                  } else {
+                    console.log('Profil existant trouvé:', existingProfile);
                   }
                 }
-              } catch (e) {
-                console.warn('Post-login profil check erreur:', (e as any)?.message);
+              } catch (profileErr) {
+                console.warn('Erreur gestion profil:', (profileErr as any)?.message);
+                // Continue même si la gestion du profil échoue
               }
+              
               // Connexion réussie - rediriger vers l'application principale
               router.replace('/');
+            } else {
+              Alert.alert('Erreur', 'Aucune donnée utilisateur reçue');
             }
           }
         } catch (err) {
           console.error('Erreur catch:', err);
-          Alert.alert('Erreur', 'Une erreur inattendue s\'est produite');
+          Alert.alert('Erreur', 'Une erreur inattendue s\'est produite. Vérifiez votre connexion internet.');
         } finally {
           setLoading(false);
         }
@@ -143,7 +185,7 @@ export default function Login() {
         setErrors(prev => ({ ...prev, [field]: undefined }));
       }
     };
-
+    
     return (
         <KeyboardAvoidingView 
           style={styles.container} 
@@ -230,6 +272,18 @@ export default function Login() {
                   🔧 Problème de connexion ? <Text style={styles.diagnosticLinkHighlight}>Diagnostic</Text>
                 </Text>
               </TouchableOpacity>
+
+              {/* Bouton de test rapide en mode développement */}
+              {DEV_MODE && (
+                <TouchableOpacity
+                  style={[styles.testButton, { marginTop: 12 }]}
+                  onPress={() => {
+                    setFormData({ email: 'test@test.com', password: 'password123' });
+                  }}
+                >
+                  <Text style={styles.testButtonText}>🧪 Remplir avec les identifiants de test</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -367,6 +421,18 @@ const styles = StyleSheet.create({
     },
     diagnosticLinkHighlight: {
         color: '#e74c3c',
+        fontWeight: '600',
+    },
+    testButton: {
+        alignItems: 'center',
+        marginTop: 12,
+        padding: 8,
+        backgroundColor: '#f39c12',
+        borderRadius: 8,
+    },
+    testButtonText: {
+        color: '#ffffff',
+        fontSize: 14,
         fontWeight: '600',
     },
 });
