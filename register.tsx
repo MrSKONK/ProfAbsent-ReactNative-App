@@ -132,16 +132,18 @@ const Register = () => {
           Alert.alert('Erreur', 'Erreur lors de l\'inscription');
         }
       } else {
-        // Mode production - utiliser Supabase
+        // Mode production - utiliser Supabase avec gestion d'erreur améliorée
+        console.log('Tentative d\'inscription Supabase...');
+        
         const { data, error } = await supabase.auth.signUp({
-          email: formData.email,
+          email: formData.email.trim().toLowerCase(),
           password: formData.password,
           options: {
             data: {
-              full_name: formData.fullName,
+              full_name: formData.fullName.trim(),
               role: formData.role,
-              departement: formData.department,
-              telephone: formData.phone,
+              departement: formData.department.trim() || null,
+              telephone: formData.phone.trim() || null,
             },
           },
         });
@@ -150,40 +152,79 @@ const Register = () => {
 
         if (error) {
           console.error('Erreur inscription:', error);
-          Alert.alert('Erreur', error.message);
-        } else {
+          
+          // Gestion spécifique des erreurs d'inscription
+          let errorMessage = 'Une erreur s\'est produite lors de l\'inscription';
+          
+          if (error.message.includes('User already registered')) {
+            errorMessage = 'Un compte existe déjà avec cette adresse email.';
+          } else if (error.message.includes('Password should be at least')) {
+            errorMessage = 'Le mot de passe doit contenir au moins 6 caractères.';
+          } else if (error.message.includes('Invalid email')) {
+            errorMessage = 'L\'adresse email n\'est pas valide.';
+          } else if (error.message.includes('Signup is disabled')) {
+            errorMessage = 'L\'inscription est temporairement désactivée.';
+          } else {
+            errorMessage = error.message;
+          }
+          
+          Alert.alert('Erreur d\'inscription', errorMessage);
+        } else if (data.user) {
           console.log('Inscription réussie:', data);
+          
           try {
-            // Si une session est active (confirmation d'email non requise), créer le profil
-            const userId = data.user?.id;
-            if (userId) {
-              const { error: insertErr } = await supabase
+            // Créer le profil utilisateur automatiquement
+            const userId = data.user.id;
+            const userEmail = data.user.email;
+            
+            if (userId && userEmail) {
+              console.log('Création du profil utilisateur...');
+              
+              const { error: insertError } = await supabase
                 .from('profiles')
                 .insert({
                   id_profile: userId,
-                  nom_complet: formData.fullName,
+                  nom_complet: formData.fullName.trim(),
                   role: formData.role,
-                  departement: formData.department,
-                  telephone: formData.phone,
+                  departement: formData.department.trim() || null,
+                  telephone: formData.phone.trim() || null
                 });
-              if (insertErr) {
-                console.warn('Insertion profil ignorée:', insertErr.message);
+              
+              if (insertError) {
+                console.warn('Erreur création profil:', insertError.message);
+                // Continuer même si la création du profil échoue
+              } else {
+                console.log('Profil créé avec succès');
               }
-            } else {
-              console.log('Aucune session après signUp (confirmation email requise ?) Profil créé à la première connexion.');
             }
-          } catch (e) {
-            console.warn('Création profil post-signUp échouée:', (e as any)?.message);
+          } catch (profileErr) {
+            console.warn('Erreur gestion profil post-inscription:', (profileErr as any)?.message);
+            // Continue même si la gestion du profil échoue
           }
-          Alert.alert(
-            'Inscription réussie',
-            'Votre compte a été créé avec succès. Vous pouvez maintenant vous connecter.',
-            [{ text: 'OK', onPress: () => router.replace('/login') }]
-          );
+          
+          // Message de succès différent selon si l'email doit être confirmé
+          const needsConfirmation = !data.session; // Pas de session = confirmation email requise
+          
+          if (needsConfirmation) {
+            Alert.alert(
+              'Inscription réussie',
+              'Votre compte a été créé. Vérifiez votre email et cliquez sur le lien de confirmation, puis connectez-vous.',
+              [{ text: 'OK', onPress: () => router.replace('/login') }]
+            );
+          } else {
+            Alert.alert(
+              'Inscription réussie',
+              'Votre compte a été créé avec succès. Vous pouvez maintenant vous connecter.',
+              [{ text: 'OK', onPress: () => router.replace('/login') }]
+            );
+          }
+        } else {
+          Alert.alert('Erreur', 'Aucune donnée utilisateur reçue lors de l\'inscription');
         }
       }
-    } catch {
-      Alert.alert('Erreur', 'Une erreur inattendue s\'est produite');
+    } catch (err) {
+      console.error('Erreur catch inscription:', err);
+      Alert.alert('Erreur', 'Une erreur inattendue s\'est produite. Vérifiez votre connexion internet.');
     } finally {
       setLoading(false);
     }
