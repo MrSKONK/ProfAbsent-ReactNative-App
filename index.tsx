@@ -6,22 +6,35 @@ import { useAuth } from '../utils/useAuth';
 
 export default function SplashScreen() {
   const router = useRouter();
-  const { isAuthenticated, isOnboardingCompleted, isLoading } = useAuth();
+  const { isAuthenticated, isOnboardingCompleted, isLoading, isManager } = useAuth();
+
+  // Debug logs
+  console.log('SplashScreen - isLoading:', isLoading);
+  console.log('SplashScreen - isAuthenticated:', isAuthenticated);
+  console.log('SplashScreen - isOnboardingCompleted:', isOnboardingCompleted);
 
   useEffect(() => {
+    console.log('SplashScreen useEffect - isLoading:', isLoading);
     if (!isLoading) {
+      console.log('SplashScreen - not loading, checking conditions...');
       if (!isOnboardingCompleted) {
-        // Première utilisation - afficher l'onboarding
+        console.log('SplashScreen - redirecting to onboarding');
         router.replace('/onboarding');
       } else if (isAuthenticated) {
-        // Utilisateur connecté - aller au dashboard via push puis replace
-        router.push('/(tabs)' as any);
+        console.log('SplashScreen - user authenticated, checking if manager...');
+        if (isManager()) {
+          console.log('SplashScreen - redirecting manager to /manager');
+          router.replace('/manager');
+        } else {
+          console.log('SplashScreen - redirecting user to /(tabs)');
+          router.replace('/(tabs)');
+        }
       } else {
-        // Pas de session active - aller à la page de connexion
+        console.log('SplashScreen - not authenticated, redirecting to login');
         router.replace('/login');
       }
     }
-  }, [isLoading, isOnboardingCompleted, isAuthenticated, router]);
+  }, [isLoading, isOnboardingCompleted, isAuthenticated, isManager, router]);
 
   return (
     <LinearGradient
