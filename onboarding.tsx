@@ -6,6 +6,7 @@ import {
   Dimensions,
   TouchableOpacity,
   ScrollView,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -114,7 +115,15 @@ export default function Onboarding() {
         colors={[slide.color + '20', slide.color + '10']}
         style={styles.iconContainer}
       >
-        <Ionicons name={slide.icon as any} size={80} color={slide.color} />
+        {slide.id === 1 ? (
+          <Image
+            source={require('../assets/images/ProfAbsent.png')}
+            style={styles.logoImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <Ionicons name={slide.icon as any} size={80} color={slide.color} />
+        )}
       </LinearGradient>
       
       <View style={styles.textContainer}>
@@ -187,23 +196,25 @@ export default function Onboarding() {
           />
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={nextSlide} style={styles.nextButton}>
-          {currentSlide === slides.length - 1 ? (
+        {currentSlide === slides.length - 1 ? (
+          <TouchableOpacity onPress={nextSlide} style={styles.finishButtonWrapper}>
             <LinearGradient
               colors={['#3498db', '#2980b9']}
               style={styles.finishButton}
             >
               <Text style={styles.finishButtonText}>Commencer</Text>
             </LinearGradient>
-          ) : (
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity onPress={nextSlide} style={styles.nextButton}>
             <LinearGradient
               colors={['#3498db', '#2980b9']}
               style={styles.nextButtonGradient}
             >
               <Ionicons name="chevron-forward" size={24} color="white" />
             </LinearGradient>
-          )}
-        </TouchableOpacity>
+          </TouchableOpacity>
+        )}
       </View>
     </LinearGradient>
   );
@@ -242,6 +253,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 40,
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -335,6 +347,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+  },
+  finishButtonWrapper: {
+    // Wrapper sans contrainte de taille pour le bouton “Commencer”
+    // afin d'éviter le layout 56x56 prévu pour la flèche
+    alignSelf: 'flex-end',
+    borderRadius: 28,
+  },
+  logoImage: {
+    width: 150,
+    height: 150,
+    borderRadius: 75,
   },
   finishButton: {
     paddingHorizontal: 32,
