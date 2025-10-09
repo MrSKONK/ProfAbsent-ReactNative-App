@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase, testSupabaseConnection } from '../utils/supabase';
 import { DEV_MODE, DEV_CREDENTIALS } from '../utils/devAuth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function DiagnosticScreen() {
   const router = useRouter();
@@ -95,6 +96,20 @@ export default function DiagnosticScreen() {
     }
   };
 
+  const resetOnboarding = async () => {
+    setLoading(true);
+    try {
+      await AsyncStorage.removeItem('onboardingCompleted');
+      Alert.alert('Onboarding réinitialisé', 'Vous verrez à nouveau l’onboarding au prochain démarrage.', [{ text: 'OK' }]);
+      // Optionnel: revenir à la racine pour déclencher la logique de redirection
+      router.replace('/');
+    } catch (err: any) {
+      Alert.alert('Erreur', err?.message || 'Impossible de réinitialiser l’onboarding');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <LinearGradient
       colors={['#f8f9fa', '#ecf0f1']}
@@ -165,6 +180,14 @@ export default function DiagnosticScreen() {
             disabled={loading}
           >
             <Text style={styles.testButtonText}>👤 Créer utilisateur test</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.testButton, { backgroundColor: '#8e44ad' }]}
+            onPress={resetOnboarding}
+            disabled={loading}
+          >
+            <Text style={styles.testButtonText}>🧼 Réinitialiser l’onboarding</Text>
           </TouchableOpacity>
         </View>
 
