@@ -16,6 +16,12 @@ import { useRouter } from "expo-router";
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../utils/supabase';
 import * as DocumentPicker from 'expo-document-picker';
+import { printToFileAsync } from 'expo-print';
+import { shareAsync } from 'expo-sharing';
+import { generatePdfHtml } from '../../utils/pdfTemplate';
+import { Asset } from 'expo-asset';
+import * as FileSystem from 'expo-file-system';
+import { notifyManagersNewRequest, scheduleAbsenceReminder } from '../../utils/useNotifications';
 
 interface FormData {
   startDate: string; // ISO YYYY-MM-DD
@@ -524,6 +530,39 @@ export default function Request() {
           
           if (requestError) throw requestError;
 
+          // Récupérer le profil pour les notifications
+          const { data: userProfile } = await supabase
+            .from('profiles')
+            .select('nom_complet')
+            .eq('id_profile', user.id)
+            .single();
+
+          // Notifier les gestionnaires de la nouvelle demande
+          try {
+            const typeName = types.find((t: { id: number; nom: string }) => t.id === selectedTypeId)?.nom || 'absence';
+            await notifyManagersNewRequest(
+              requestData.id_absence_request,
+              userProfile?.nom_complet || 'Un employé',
+              typeName,
+              new Date(formData.startDate).toLocaleDateString('fr-FR')
+            );
+          } catch (notifError) {
+            console.error('Erreur notification gestionnaires:', notifError);
+          }
+
+          // Planifier un rappel 1 jour avant l'absence (si approuvée, ce sera fait côté gestionnaire)
+          try {
+            const typeName = types.find((t: { id: number; nom: string }) => t.id === selectedTypeId)?.nom || 'absence';
+            await scheduleAbsenceReminder(
+              requestData.id_absence_request,
+              formData.startDate,
+              typeName,
+              1 // 1 jour avant
+            );
+          } catch (reminderError) {
+            console.error('Erreur planification rappel:', reminderError);
+          }
+
           // Uploader le document si nécessaire
           if (selectedDocument && requestData) {
             const fileExt = selectedDocument.name.split('.').pop();
@@ -565,9 +604,126 @@ export default function Request() {
             if (docError) throw docError;
           }
 
-          Alert.alert('Demande soumise', 'Votre demande d\'absence a été envoyée avec succès.', [
-            { text: 'OK', onPress: () => router.back() }
-          ]);
+          // Génération du PDF
+          try {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('nom_complet, role')
+              .eq('id_profile', user.id)
+              .single();
+
+            const [nom, ...prenomParts] = (profile?.nom_complet || 'Inconnu').split(' ');
+            const prenom = prenomParts.join(' ');
+
+            // Chargement des images en base64 pour le PDF
+            const loadBase64Image = async (module: any) => {
+              try {
+                const asset = Asset.fromModule(module);
+                await asset.downloadAsync();
+                if (!asset.localUri) return undefined;
+                const base64 = await FileSystem.readAsStringAsync(asset.localUri, { encoding: 'base64' });
+                const ext = asset.localUri.split('.').pop()?.toLowerCase();
+                const mime = ext === 'png' ? 'image/png' : (ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png');
+                return `data:${mime};base64,${base64}`;
+              } catch (e) {
+                console.warn('Erreur chargement image PDF:', e);
+                return undefined;
+              }
+            };
+
+            const logoRfBase64 = await loadBase64Image(require('../../assets/images/Republique-francaise-logo.svg.png'));
+            const logoLyceeBase64 = await loadBase64Image(require('../../assets/images/Logo LGT Baimbcho.jpg'));
+
+            const pdfHtml = generatePdfHtml({
+              nom: nom || '',
+              prenom: prenom || '',
+              grade: profile?.role || '',
+              typeAbsence: 'autorisation', // Par défaut, à adapter selon la logique métier si besoin
+              isPonctuel: formData.startDate === formData.endDate,
+              dateDebut: formatDisplay(formData.startDate) || '',
+              dateFin: formatDisplay(formData.endDate) || '',
+              dateReprise: formatDisplay(formData.endDate) || '', // Simplification: reprise le lendemain de la fin ? Ou à saisir ?
+              motif: formData.reason,
+              piecesJointes: selectedDocument ? selectedDocument.name : 'Aucune',
+              remplacement: formData.propositionRemplacement 
+                ? `${formatDisplay(formData.dateRemplacement)} de ${formData.heureDebutRemplacement} à ${formData.heureFinRemplacement} - Salle ${formData.salleRemplacement} - Classe ${formData.classeRemplacement}`
+                : 'Aucun remplacement proposé',
+              dateDemande: new Date().toLocaleDateString('fr-FR'),
+              logoRfBase64,
+              logoLyceeBase64,
+            });
+
+            const { uri } = await printToFileAsync({ html: pdfHtml });
+            
+            // Uploader le PDF automatiquement dans Supabase
+            let pdfSaved = false;
+            try {
+              // Lire le PDF généré
+              const pdfBase64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+              const pdfData = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0));
+              
+              // Générer un nom de fichier unique
+              const pdfFileName = `${user.id}/${requestData.id_absence_request}_recapitulatif_${Date.now()}.pdf`;
+              
+              // Upload vers Supabase Storage
+              const { data: pdfUploadData, error: pdfUploadError } = await supabase.storage
+                .from('absence-documents')
+                .upload(pdfFileName, pdfData, {
+                  contentType: 'application/pdf',
+                });
+
+              if (pdfUploadError) {
+                console.error('Erreur upload PDF:', pdfUploadError);
+              } else {
+                // Enregistrer les métadonnées du PDF
+                const { error: pdfDocError } = await supabase
+                  .from('absence_documents')
+                  .insert({
+                    id_absence_request: requestData.id_absence_request,
+                    nom_fichier: `Récapitulatif_${formData.startDate}_${formData.endDate}.pdf`,
+                    type_mime: 'application/pdf',
+                    taille_octets: pdfData.length,
+                    url_fichier: pdfUploadData.path,
+                  });
+
+                if (pdfDocError) {
+                  console.error('Erreur enregistrement métadonnées PDF:', pdfDocError);
+                } else {
+                  pdfSaved = true;
+                  console.log('PDF sauvegardé avec succès');
+                }
+              }
+            } catch (uploadErr) {
+              console.error('Erreur sauvegarde PDF:', uploadErr);
+            }
+            
+            Alert.alert(
+              'Demande soumise',
+              pdfSaved 
+                ? 'Votre demande d\'absence a été envoyée et le récapitulatif PDF a été sauvegardé. Voulez-vous aussi le télécharger ?'
+                : 'Votre demande d\'absence a été envoyée avec succès. Voulez-vous télécharger le justificatif PDF ?',
+              [
+                { 
+                  text: 'Non', 
+                  onPress: () => router.back(),
+                  style: 'cancel'
+                },
+                { 
+                  text: 'Oui, télécharger', 
+                  onPress: async () => {
+                    await shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+                    router.back();
+                  } 
+                }
+              ]
+            );
+          } catch (pdfError) {
+            console.error('Erreur génération PDF:', pdfError);
+            // Fallback si erreur PDF mais succès soumission
+            Alert.alert('Demande soumise', 'Votre demande a été envoyée, mais le PDF n\'a pas pu être généré.', [
+              { text: 'OK', onPress: () => router.back() }
+            ]);
+          }
 
           // Réinitialiser le formulaire
           setFormData({ startDate: '', endDate: '', type: '', reason: '', propositionRemplacement: false, dateRemplacement: '', heureDebutRemplacement: '', heureFinRemplacement: '', salleRemplacement: '', classeRemplacement: '' });

@@ -239,10 +239,22 @@ const MyRequests = () => {
                         onPress={() => router.push('/request')}
                     >
                         <View style={[styles.actionIcon, { backgroundColor: '#3498db20' }]}>
-                            <Ionicons name="add-circle-outline" size={32} color="#3498db" />
+                            <Ionicons name="add-circle-outline" size={28} color="#3498db" />
                         </View>
                         <Text style={styles.actionTitle}>Nouvelle demande</Text>
-                        <Text style={styles.actionSubtitle}>Créer une demande d&apos;absence</Text>
+                        <Text style={styles.actionSubtitle}>Créer une absence</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                        style={styles.actionCard}
+                        onPress={() => router.push('/(tabs)/requests/recap')}
+                    >
+                        
+                        <View style={[styles.actionIcon, { backgroundColor: '#27ae6020' }]}>
+                            <Ionicons name="folder-outline" size={28} color="#27ae60" />
+                        </View>
+                        <Text style={styles.actionTitle}>Docs</Text>
+                        <Text style={styles.actionSubtitle}>Mes documents</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity 
@@ -250,10 +262,10 @@ const MyRequests = () => {
                         onPress={() => router.push('/Profile')}
                     >
                         <View style={[styles.actionIcon, { backgroundColor: '#9b59b620' }]}>
-                            <Ionicons name="person-outline" size={32} color="#9b59b6" />
+                            <Ionicons name="person-outline" size={28} color="#9b59b6" />
                         </View>
                         <Text style={styles.actionTitle}>Mon profil</Text>
-                        <Text style={styles.actionSubtitle}>Gérer mes informations</Text>
+                        <Text style={styles.actionSubtitle}>Mes infos</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -264,7 +276,7 @@ const MyRequests = () => {
                     <Text style={styles.sectionTitle}>Demandes récentes</Text>
                     <TouchableOpacity 
                         style={styles.viewAllButton}
-                        onPress={() => router.push('/requests/[all]')}
+                        onPress={() => router.push('/(tabs)/requests/all')}
                     >
                         <Text style={styles.viewAllText}>Voir tout</Text>
                         <Ionicons name="chevron-forward" size={16} color="#3498db" />
@@ -285,7 +297,7 @@ const MyRequests = () => {
                       <View style={styles.requestFooter}>
                                                     <TouchableOpacity
                                                         style={styles.detailsButton}
-                                                        onPress={() => router.push({ pathname: '/requests/[id]', params: { id: String(request.id) } })}
+                                                        onPress={() => router.push(`/(tabs)/requests/${request.id}`)}
                                                     >
                               <Text style={styles.detailsButtonText}>Voir détails</Text>
                               <Ionicons name="chevron-forward" size={16} color="#3498db" />

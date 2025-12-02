@@ -1,7 +1,11 @@
 import React from "react";
 import { Stack } from "expo-router";
+import { useNotifications } from "../utils/useNotifications";
 
 export default function RootLayout() {
+  // Initialiser les notifications push
+  useNotifications();
+
   return (
     <Stack
       screenOptions={{

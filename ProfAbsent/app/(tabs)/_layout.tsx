@@ -113,19 +113,12 @@ export default function TabsLayout() {
           ),
         }} 
       />
-      {/* Détails de demande: route cachée dans la tab bar */}
+      {/* Cacher le dossier requests de la tab bar */}
       <Tabs.Screen
-        name="requests/[id]"
+        name="requests"
         options={{
+          title: '',
           href: null,
-          title: 'Détails demande',
-        }}
-      />
-      <Tabs.Screen
-        name="requests/[all]"
-        options={{
-          href: null,
-          title: 'Toutes les demandes',
         }}
       />
     </Tabs>

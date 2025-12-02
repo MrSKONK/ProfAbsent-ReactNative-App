@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from "../utils/supabase";
 import { useAuth } from "../utils/useAuth";
 import { LinearGradient } from 'expo-linear-gradient';
+import { notifyRequestStatusChange } from "../utils/useNotifications";
 
 
 type AbsenceStatus = "en_attente" | "approuve" | "rejete" | "annule";
@@ -19,6 +20,7 @@ interface AbsenceRequest {
     reason: string | null;
     createdAt: string | null;
     userName: string;
+    userId: string;
     documents?: {
         id_document: number;
         nom_fichier: string;
@@ -170,6 +172,7 @@ export default function Manager() {
                     reason: item.motif ?? null,
                     createdAt: item.date_creation ?? null,
                     userName: userName,
+                    userId: item.id_utilisateur,
                     documents: item.absence_documents || [],
                 };
             });
@@ -185,7 +188,7 @@ export default function Manager() {
     }, []);
 
     const updateRequestStatus = useCallback(
-        async (id: number, status: "approuve" | "rejete") => {
+        async (id: number, status: "approuve" | "rejete", userId: string, requestType: string) => {
             if (!managerId) {
                 Alert.alert("Action impossible", "Identifiant gestionnaire manquant. Veuillez réessayer.");
                 return;
@@ -210,6 +213,20 @@ export default function Manager() {
                     console.error("Erreur lors de la mise à jour du statut :", error);
                     Alert.alert("Erreur", "Impossible de mettre à jour la demande.");
                     return;
+                }
+
+                // Envoyer une notification push à l'utilisateur
+                try {
+                    await notifyRequestStatusChange(
+                        id,
+                        userId,
+                        status,
+                        requestType
+                    );
+                    console.log('[Manager] Notification envoyée à l\'utilisateur:', userId);
+                } catch (notifError) {
+                    console.error('[Manager] Erreur lors de l\'envoi de la notification:', notifError);
+                    // On ne bloque pas le processus si la notification échoue
                 }
 
                 await afficherDonnees();
@@ -415,7 +432,7 @@ export default function Manager() {
                                                     styles.approveButton,
                                                     isDisabled && styles.actionButtonDisabled,
                                                 ]}
-                                                onPress={() => updateRequestStatus(item.id, "approuve")}
+                                                onPress={() => updateRequestStatus(item.id, "approuve", item.userId, item.type)}
                                                 disabled={isDisabled}
                                             >
                                                 {updatingId === item.id ? (
@@ -426,7 +443,7 @@ export default function Manager() {
                                             </TouchableOpacity>
                                             <TouchableOpacity
                                                 style={[styles.actionButton, styles.rejectButton, isDisabled && styles.actionButtonDisabled]}
-                                                onPress={() => updateRequestStatus(item.id, "rejete")}
+                                                onPress={() => updateRequestStatus(item.id, "rejete", item.userId, item.type)}
                                                 disabled={isDisabled}
                                             >
                                                 {updatingId === item.id ? (

@@ -2,7 +2,9 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
     "expo-document-picker": "^14.0.7",
-    "expo-secure-store": "^15.0.7"
+    "expo-print": "~15.0.7",
+    "expo-secure-store": "^15.0.7",
+    "expo-sharing": "~14.0.7"
   },
   "devDependencies": {
     "@types/react": "~19.1.10",

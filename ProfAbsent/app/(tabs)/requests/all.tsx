@@ -271,52 +271,59 @@ export default function AllRequests() {
               const days = countBusinessDays(request.date_debut, request.date_fin);
               
               return (
-                <TouchableOpacity
-                  key={request.id}
-                  style={styles.requestCard}
-                  onPress={() => router.push(`/requests/${request.id}` as any)}
-                >
-                  <View style={styles.requestHeader}>
-                    <View style={styles.requestHeaderLeft}>
-                      <Ionicons name={meta.icon as any} size={20} color={meta.color} />
-                      <Text style={styles.requestType}>{request.type}</Text>
-                      {request.proposition_remplacement && (
-                        <View style={styles.replacementBadge}>
-                          <Ionicons name="swap-horizontal" size={12} color="#3498db" />
+                <View key={request.id} style={styles.requestCard}>
+                  <TouchableOpacity
+                    onPress={() => router.push(`/requests/${request.id}` as any)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.requestHeader}>
+                      <View style={styles.requestHeaderLeft}>
+                        <Ionicons name={meta.icon as any} size={20} color={meta.color} />
+                        <Text style={styles.requestType}>{request.type}</Text>
+                        {request.proposition_remplacement && (
+                          <View style={styles.replacementBadge}>
+                            <Ionicons name="swap-horizontal" size={12} color="#3498db" />
+                          </View>
+                        )}
+                      </View>
+                      <View style={[styles.statusBadge, { backgroundColor: meta.color }]}> 
+                        <Text style={styles.statusBadgeText}>{meta.label}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.requestBody}>
+                      <View style={styles.requestRow}>
+                        <Ionicons name="calendar-outline" size={16} color="#7f8c8d" />
+                        <Text style={styles.requestDate}>
+                          {formatDateRange(request.date_debut, request.date_fin)}
+                        </Text>
+                        <Text style={styles.requestDays}>• {days} j ouvrés</Text>
+                      </View>
+
+                      {request.motif && (
+                        <View style={styles.requestRow}>
+                          <Ionicons name="text-outline" size={16} color="#7f8c8d" />
+                          <Text style={styles.requestMotif} numberOfLines={2}>
+                            {request.motif}
+                          </Text>
                         </View>
                       )}
-                    </View>
-                    <View style={[styles.statusBadge, { backgroundColor: meta.color }]}>
-                      <Text style={styles.statusBadgeText}>{meta.label}</Text>
-                    </View>
-                  </View>
 
-                  <View style={styles.requestBody}>
-                    <View style={styles.requestRow}>
-                      <Ionicons name="calendar-outline" size={16} color="#7f8c8d" />
-                      <Text style={styles.requestDate}>
-                        {formatDateRange(request.date_debut, request.date_fin)}
-                      </Text>
-                      <Text style={styles.requestDays}>• {days} j ouvrés</Text>
-                    </View>
-
-                    {request.motif && (
-                      <View style={styles.requestRow}>
-                        <Ionicons name="text-outline" size={16} color="#7f8c8d" />
-                        <Text style={styles.requestMotif} numberOfLines={2}>
-                          {request.motif}
+                      <View style={styles.requestFooter}>
+                        <Text style={styles.requestCreatedAt}>
+                          Créée le {formatDate(request.date_creation)}
                         </Text>
+                        <Ionicons name="chevron-forward" size={16} color="#7f8c8d" />
                       </View>
-                    )}
-
-                    <View style={styles.requestFooter}>
-                      <Text style={styles.requestCreatedAt}>
-                        Créée le {formatDate(request.date_creation)}
-                      </Text>
-                      <Ionicons name="chevron-forward" size={16} color="#7f8c8d" />
                     </View>
-                  </View>
-                </TouchableOpacity>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{ marginTop: 8, alignSelf: 'flex-end' }}
+                    onPress={() => router.push(`/requests/${request.id}` as any)}
+                  >
+                    <Text style={{ color: '#3498db', fontWeight: '600' }}>Voir détails</Text>
+                  </TouchableOpacity>
+                </View>
               );
             })
           )}
