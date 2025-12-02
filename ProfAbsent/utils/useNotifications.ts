@@ -103,7 +103,7 @@ async function registerForPushNotificationsAsync(): Promise<string | null> {
   // Obtenir le token Expo Push
   try {
     const tokenData = await Notifications.getExpoPushTokenAsync({
-      projectId: '0eb1050f-a686-47b4-9300-178fcb2ad596', // Remplacer par votre projectId Expo
+      projectId: '0eb1050f-a686-47b4-9300-178fcb2ad596',
     });
     token = tokenData.data;
     console.log('Token push:', token);

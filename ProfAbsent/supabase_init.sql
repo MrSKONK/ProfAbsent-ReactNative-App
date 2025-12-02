@@ -1,25 +1,14 @@
 -- ==========================================
 -- SCRIPT SUPABASE POUR PROFABSENT
 -- À exécuter dans Supabase SQL Editor
+-- Version nettoyée et consolidée
 -- ==========================================
 
--- 1. 👤 Table profiles - Profils utilisateurs étendus
-CREATE TABLE IF NOT EXISTS profiles (
-  id_profile UUID PRIMARY KEY,
-  nom_complet TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('Professeur', 'Personnel Administratif', 'Gestionnaire')),
-  departement TEXT,
-  telephone numeric(15,0),
-  email TEXT,
-  date_embauche DATE,
-  date_creation TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-  date_modification TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
+-- ==========================================
+-- FONCTIONS UTILITAIRES
+-- ==========================================
 
--- RLS pour profiles
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-
--- Créer une fonction pour vérifier le rôle sans récursion
+-- Fonction pour vérifier le rôle sans récursion (SECURITY DEFINER contourne RLS)
 CREATE OR REPLACE FUNCTION is_manager(user_id uuid)
 RETURNS boolean AS $$
 BEGIN
@@ -30,19 +19,52 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- ==========================================
+-- 1. 👤 Table profiles - Profils utilisateurs étendus
+-- ==========================================
+
+CREATE TABLE IF NOT EXISTS profiles (
+  id_profile UUID PRIMARY KEY,
+  nom_complet TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('Professeur', 'Personnel Administratif', 'Gestionnaire')),
+  departement TEXT,
+  telephone numeric(15,0),
+  email TEXT,
+  date_embauche DATE,
+  push_token TEXT, -- Token Expo Push Notifications
+  date_creation TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  date_modification TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Index pour le token push
+CREATE INDEX IF NOT EXISTS idx_profiles_push_token ON profiles(push_token);
+
+-- Commentaires
+COMMENT ON COLUMN profiles.push_token IS 'Token Expo Push Notifications pour envoyer des notifications à l''utilisateur';
+
+-- RLS pour profiles
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
 CREATE POLICY "Users can view own profile" ON profiles
   FOR SELECT USING (auth.uid() = id_profile);
 
+DROP POLICY IF EXISTS "Managers can view all profiles" ON profiles;
 CREATE POLICY "Managers can view all profiles" ON profiles
   FOR SELECT USING (is_manager(auth.uid()));
 
+DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
 CREATE POLICY "Users can update own profile" ON profiles
   FOR UPDATE USING (auth.uid() = id_profile);
 
+DROP POLICY IF EXISTS "Users can insert own profile" ON profiles;
 CREATE POLICY "Users can insert own profile" ON profiles
   FOR INSERT WITH CHECK (auth.uid() = id_profile);
 
+-- ==========================================
 -- 2. 📝 Table absence_types - Types d'absence
+-- ==========================================
+
 CREATE TABLE IF NOT EXISTS absence_types (
   id_absence_type SERIAL PRIMARY KEY,
   nom TEXT NOT NULL UNIQUE,
@@ -67,10 +89,14 @@ ON CONFLICT (nom) DO NOTHING;
 -- RLS pour absence_types
 ALTER TABLE absence_types ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Everyone can view absence types" ON absence_types;
 CREATE POLICY "Everyone can view absence types" ON absence_types
   FOR SELECT USING (est_actif = TRUE);
 
+-- ==========================================
 -- 3. 📋 Table absence_requests - Demandes d'absence
+-- ==========================================
+
 CREATE TABLE IF NOT EXISTS absence_requests (
   id_absence_request SERIAL PRIMARY KEY,
   id_utilisateur UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
@@ -82,45 +108,53 @@ CREATE TABLE IF NOT EXISTS absence_requests (
   commentaire_gestionnaire TEXT,
   approuve_par UUID REFERENCES auth.users(id),
   date_approbation TIMESTAMP WITH TIME ZONE,
+  -- Colonnes de remplacement
   proposition_remplacement BOOLEAN DEFAULT FALSE,
   date_remplacement DATE,
   heure_debut_remplacement TIME,
   heure_fin_remplacement TIME,
   salle_remplacement TEXT,
   classe_remplacement TEXT,
+  -- Timestamps
   date_creation TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
   date_modification TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Commentaires pour les colonnes de remplacement
+COMMENT ON COLUMN absence_requests.proposition_remplacement IS 'Indique si un remplacement est proposé pour cette absence';
+COMMENT ON COLUMN absence_requests.date_remplacement IS 'Date du cours de remplacement proposé';
+COMMENT ON COLUMN absence_requests.heure_debut_remplacement IS 'Heure de début du cours de remplacement';
+COMMENT ON COLUMN absence_requests.heure_fin_remplacement IS 'Heure de fin du cours de remplacement';
+COMMENT ON COLUMN absence_requests.salle_remplacement IS 'Salle où se tiendra le cours de remplacement';
+COMMENT ON COLUMN absence_requests.classe_remplacement IS 'Classe concernée par le cours de remplacement';
+
 -- RLS pour absence_requests
 ALTER TABLE absence_requests ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view own requests" ON absence_requests;
 CREATE POLICY "Users can view own requests" ON absence_requests
   FOR SELECT USING (auth.uid() = id_utilisateur);
 
+DROP POLICY IF EXISTS "Users can create own requests" ON absence_requests;
 CREATE POLICY "Users can create own requests" ON absence_requests
   FOR INSERT WITH CHECK (auth.uid() = id_utilisateur);
 
+DROP POLICY IF EXISTS "Users can update own pending requests" ON absence_requests;
 CREATE POLICY "Users can update own pending requests" ON absence_requests
   FOR UPDATE USING (auth.uid() = id_utilisateur AND statut = 'en_attente');
 
+DROP POLICY IF EXISTS "Managers can view all requests" ON absence_requests;
 CREATE POLICY "Managers can view all requests" ON absence_requests
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM profiles 
-      WHERE id_profile = auth.uid() AND role = 'Gestionnaire'
-    )
-  );
+  FOR SELECT USING (is_manager(auth.uid()));
 
+DROP POLICY IF EXISTS "Managers can approve requests" ON absence_requests;
 CREATE POLICY "Managers can approve requests" ON absence_requests
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id_profile = auth.uid() AND role = 'Gestionnaire'
-    )
-  );
+  FOR UPDATE USING (is_manager(auth.uid()));
 
+-- ==========================================
 -- 4. 📊 Table absence_balances - Soldes de congés
+-- ==========================================
+
 CREATE TABLE IF NOT EXISTS absence_balances (
   id_absence_balance SERIAL PRIMARY KEY,
   id_utilisateur UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
@@ -137,52 +171,90 @@ CREATE TABLE IF NOT EXISTS absence_balances (
 -- RLS pour absence_balances
 ALTER TABLE absence_balances ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view own balances" ON absence_balances;
 CREATE POLICY "Users can view own balances" ON absence_balances
   FOR SELECT USING (auth.uid() = id_utilisateur);
 
+DROP POLICY IF EXISTS "Managers can view all balances" ON absence_balances;
 CREATE POLICY "Managers can view all balances" ON absence_balances
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE id_profile = auth.uid() AND role = 'Gestionnaire'
-    )
-  );
+  FOR SELECT USING (is_manager(auth.uid()));
 
--- 5. 🔔 Table notifications - Notifications
+-- ==========================================
+-- 5. 🔔 Table notifications - Historique des notifications in-app
+-- ==========================================
+
 CREATE TABLE IF NOT EXISTS notifications (
-  id_notification SERIAL PRIMARY KEY,
-  id_utilisateur UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  titre TEXT NOT NULL,
+  id SERIAL PRIMARY KEY,
+  id_utilisateur UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  titre VARCHAR(255) NOT NULL,
   message TEXT NOT NULL,
-  type_notification TEXT NOT NULL CHECK (type_notification IN ('demande_approuvee', 'demande_rejetee', 'demande_soumise', 'rappel', 'info')),
+  type_notification VARCHAR(50) NOT NULL CHECK (type_notification IN ('demande_approuvee', 'demande_rejetee', 'demande_soumise', 'rappel', 'info')),
+  id_demande_associee INTEGER REFERENCES absence_requests(id_absence_request) ON DELETE SET NULL,
   est_lu BOOLEAN DEFAULT FALSE,
-  id_demande_associee INTEGER REFERENCES absence_requests(id_absence_request),
-  date_creation TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Index pour les performances
+CREATE INDEX IF NOT EXISTS idx_notifications_utilisateur ON notifications(id_utilisateur);
+CREATE INDEX IF NOT EXISTS idx_notifications_non_lues ON notifications(id_utilisateur, est_lu) WHERE est_lu = FALSE;
+CREATE INDEX IF NOT EXISTS idx_notifications_date ON notifications(created_at DESC);
+
+-- Commentaires
+COMMENT ON TABLE notifications IS 'Historique des notifications in-app pour les utilisateurs';
+COMMENT ON COLUMN notifications.id_utilisateur IS 'Utilisateur destinataire de la notification';
+COMMENT ON COLUMN notifications.titre IS 'Titre de la notification';
+COMMENT ON COLUMN notifications.message IS 'Contenu détaillé de la notification';
+COMMENT ON COLUMN notifications.type_notification IS 'Type: demande_approuvee, demande_rejetee, demande_soumise, rappel, info';
+COMMENT ON COLUMN notifications.id_demande_associee IS 'Référence optionnelle à une demande d''absence';
+COMMENT ON COLUMN notifications.est_lu IS 'Indique si la notification a été lue';
 
 -- RLS pour notifications
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view own notifications" ON notifications;
 CREATE POLICY "Users can view own notifications" ON notifications
   FOR SELECT USING (auth.uid() = id_utilisateur);
 
+DROP POLICY IF EXISTS "Users can update own notifications" ON notifications;
 CREATE POLICY "Users can update own notifications" ON notifications
-  FOR UPDATE USING (auth.uid() = id_utilisateur);
+  FOR UPDATE USING (auth.uid() = id_utilisateur)
+  WITH CHECK (auth.uid() = id_utilisateur);
 
+DROP POLICY IF EXISTS "Allow notification insertion" ON notifications;
+CREATE POLICY "Allow notification insertion" ON notifications
+  FOR INSERT WITH CHECK (true);
+
+-- Fonction pour marquer toutes les notifications comme lues
+CREATE OR REPLACE FUNCTION mark_all_notifications_read()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  UPDATE notifications
+  SET est_lu = TRUE
+  WHERE id_utilisateur = auth.uid() AND est_lu = FALSE;
+END;
+$$;
+
+-- ==========================================
 -- 6. 📎 Table absence_documents - Documents joints aux demandes d'absence
+-- ==========================================
+
 CREATE TABLE IF NOT EXISTS absence_documents (
   id_document SERIAL PRIMARY KEY,
   id_absence_request INTEGER REFERENCES absence_requests(id_absence_request) ON DELETE CASCADE NOT NULL,
   nom_fichier TEXT NOT NULL,
   type_mime TEXT NOT NULL,
   taille_octets INTEGER NOT NULL,
-  url_fichier TEXT NOT NULL, -- URL Supabase Storage
+  url_fichier TEXT NOT NULL,
   date_upload TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- RLS pour absence_documents
 ALTER TABLE absence_documents ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view documents of own requests" ON absence_documents;
 CREATE POLICY "Users can view documents of own requests" ON absence_documents
   FOR SELECT USING (
     EXISTS (
@@ -192,6 +264,7 @@ CREATE POLICY "Users can view documents of own requests" ON absence_documents
     )
   );
 
+DROP POLICY IF EXISTS "Users can insert documents to own requests" ON absence_documents;
 CREATE POLICY "Users can insert documents to own requests" ON absence_documents
   FOR INSERT WITH CHECK (
     EXISTS (
@@ -201,16 +274,12 @@ CREATE POLICY "Users can insert documents to own requests" ON absence_documents
     )
   );
 
+DROP POLICY IF EXISTS "Managers can view all documents" ON absence_documents;
 CREATE POLICY "Managers can view all documents" ON absence_documents
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM profiles 
-      WHERE id_profile = auth.uid() AND role = 'Gestionnaire'
-    )
-  );
+  FOR SELECT USING (is_manager(auth.uid()));
 
 -- ==========================================
--- CONFIGURATION SUPABASE STORAGE
+-- 7. 📦 CONFIGURATION SUPABASE STORAGE
 -- ==========================================
 
 -- Créer le bucket pour les documents d'absence
@@ -244,81 +313,5 @@ CREATE POLICY "Users can view documents of own requests" ON storage.objects
 CREATE POLICY "Managers can view all documents" ON storage.objects
   FOR SELECT USING (
     bucket_id = 'absence-documents' AND
-    EXISTS (
-      SELECT 1 FROM profiles 
-      WHERE id_profile = auth.uid() AND role = 'Gestionnaire'
-    )
+    is_manager(auth.uid())
   );
-
--- ==========================================
--- FIX: Permettre aux gestionnaires de voir tous les profils
--- À exécuter dans Supabase SQL Editor
--- ==========================================
-
--- D'abord, supprimer la politique problématique si elle existe
-DROP POLICY IF EXISTS "Managers can view all profiles" ON profiles;
-
--- Créer une fonction pour vérifier le rôle sans récursion
-CREATE OR REPLACE FUNCTION is_manager(user_id uuid)
-RETURNS boolean AS $$
-BEGIN
-  RETURN EXISTS (
-    SELECT 1 FROM profiles 
-    WHERE id_profile = user_id AND role = 'Gestionnaire'
-  );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Ajouter une politique permettant aux gestionnaires de voir tous les profils
--- En utilisant SECURITY DEFINER, la fonction contourne le RLS
-CREATE POLICY "Managers can view all profiles" ON profiles
-  FOR SELECT USING (is_manager(auth.uid()));
-
--- Vérifier les politiques existantes
--- SELECT * FROM pg_policies WHERE tablename = 'profiles';
-
-
--- Migration : Ajout des colonnes de remplacement pour la table absence_requests
--- Date de création : 23 novembre 2025
--- Description : Ajoute les champs nécessaires pour gérer les propositions de remplacement
-
--- Ajouter les colonnes de remplacement
-ALTER TABLE absence_requests
-ADD COLUMN IF NOT EXISTS proposition_remplacement BOOLEAN DEFAULT FALSE,
-ADD COLUMN IF NOT EXISTS date_remplacement DATE,
-ADD COLUMN IF NOT EXISTS heure_debut_remplacement TIME,
-ADD COLUMN IF NOT EXISTS heure_fin_remplacement TIME,
-ADD COLUMN IF NOT EXISTS salle_remplacement TEXT,
-ADD COLUMN IF NOT EXISTS classe_remplacement TEXT;
-
--- Commentaires pour documenter les colonnes
-COMMENT ON COLUMN absence_requests.proposition_remplacement IS 'Indique si un remplacement est proposé pour cette absence';
-COMMENT ON COLUMN absence_requests.date_remplacement IS 'Date du cours de remplacement proposé';
-COMMENT ON COLUMN absence_requests.heure_debut_remplacement IS 'Heure de début du cours de remplacement';
-COMMENT ON COLUMN absence_requests.heure_fin_remplacement IS 'Heure de fin du cours de remplacement';
-COMMENT ON COLUMN absence_requests.salle_remplacement IS 'Salle où se tiendra le cours de remplacement';
-COMMENT ON COLUMN absence_requests.classe_remplacement IS 'Classe concernée par le cours de remplacement';
-
-
--- Migration : Remplacer heure_remplacement par heure_debut_remplacement et heure_fin_remplacement
--- Date de création : 25 novembre 2025
--- Description : Transforme la colonne unique d'heure en deux colonnes distinctes pour début et fin
-
--- Ajouter les nouvelles colonnes si elles n'existent pas
-ALTER TABLE absence_requests
-ADD COLUMN IF NOT EXISTS heure_debut_remplacement TIME,
-ADD COLUMN IF NOT EXISTS heure_fin_remplacement TIME;
-
--- Migrer les données existantes (copier heure_remplacement vers heure_debut_remplacement)
--- Note: heure_fin_remplacement restera NULL pour les anciennes demandes
-UPDATE absence_requests
-SET heure_debut_remplacement = heure_remplacement
-WHERE heure_remplacement IS NOT NULL AND heure_debut_remplacement IS NULL;
-
--- Supprimer l'ancienne colonne si elle existe
-ALTER TABLE absence_requests
-DROP COLUMN IF EXISTS heure_remplacement;
-
--- Commentaires pour documenter les nouvelles colonnes
-COMMENT ON COLUMN absence_requests.heure_debut_remplacement IS 'Heure de début du cours de remplacement';
-COMMENT ON COLUMN absence_requests.heure_fin_remplacement IS 'Heure de fin du cours de remplacement';
