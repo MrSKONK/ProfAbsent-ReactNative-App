@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1093260809922",
+    "project_id": "profabsent-fbdd3",
+    "storage_bucket": "profabsent-fbdd3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1093260809922:android:789b57e54cfabf789a4d5b",
+        "android_client_info": {
+          "package_name": "com.mrskonksorganization.profabsent"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAxvQH0key6HwssDeCkxAOXcU2ZrcZUXiQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

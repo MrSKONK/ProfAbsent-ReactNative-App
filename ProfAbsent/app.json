@@ -20,7 +20,8 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.mrskonksorganization.profabsent"
+      "package": "com.mrskonksorganization.profabsent",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",
