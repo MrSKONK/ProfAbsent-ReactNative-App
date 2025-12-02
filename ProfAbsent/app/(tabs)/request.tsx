@@ -20,7 +20,6 @@ import { printToFileAsync } from 'expo-print';
 import { shareAsync } from 'expo-sharing';
 import { generatePdfHtml } from '../../utils/pdfTemplate';
 import { Asset } from 'expo-asset';
-import * as FileSystem from 'expo-file-system';
 import { notifyManagersNewRequest, scheduleAbsenceReminder } from '../../utils/useNotifications';
 
 interface FormData {
@@ -621,10 +620,18 @@ export default function Request() {
                 const asset = Asset.fromModule(module);
                 await asset.downloadAsync();
                 if (!asset.localUri) return undefined;
-                const base64 = await FileSystem.readAsStringAsync(asset.localUri, { encoding: 'base64' });
-                const ext = asset.localUri.split('.').pop()?.toLowerCase();
-                const mime = ext === 'png' ? 'image/png' : (ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png');
-                return `data:${mime};base64,${base64}`;
+                
+                // Nouvelle méthode : utiliser fetch + blob au lieu de readAsStringAsync (déprécié)
+                const response = await fetch(asset.localUri);
+                const blob = await response.blob();
+                return new Promise<string | undefined>((resolve) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => {
+                    resolve(reader.result as string);
+                  };
+                  reader.onerror = () => resolve(undefined);
+                  reader.readAsDataURL(blob);
+                });
               } catch (e) {
                 console.warn('Erreur chargement image PDF:', e);
                 return undefined;
@@ -658,9 +665,27 @@ export default function Request() {
             // Uploader le PDF automatiquement dans Supabase
             let pdfSaved = false;
             try {
-              // Lire le PDF généré
-              const pdfBase64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-              const pdfData = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0));
+              // Lire le PDF généré avec fetch + FileReader (compatible React Native)
+              const pdfResponse = await fetch(uri);
+              const pdfBlob = await pdfResponse.blob();
+              
+              // Convertir le blob en base64 puis en Uint8Array via FileReader
+              const pdfData = await new Promise<Uint8Array>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                  const base64String = reader.result as string;
+                  // Extraire la partie base64 après "data:application/pdf;base64,"
+                  const base64Data = base64String.split(',')[1];
+                  const binaryString = atob(base64Data);
+                  const bytes = new Uint8Array(binaryString.length);
+                  for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                  }
+                  resolve(bytes);
+                };
+                reader.onerror = () => reject(new Error('Erreur lecture PDF'));
+                reader.readAsDataURL(pdfBlob);
+              });
               
               // Générer un nom de fichier unique
               const pdfFileName = `${user.id}/${requestData.id_absence_request}_recapitulatif_${Date.now()}.pdf`;
